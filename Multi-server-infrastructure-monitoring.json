@@ -1,0 +1,400 @@
+{
+  "name": "Multi-server-infrastructure-monitoring",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            },
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -448,
+        0
+      ],
+      "id": "279d895e-f3b1-4a6c-bb17-0086148c546a",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "=http://13.50.60.190:3000/health",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -288,
+        -272
+      ],
+      "id": "1aaf4a12-068b-4d9e-aa8d-145e2aa7bd8d",
+      "name": "Server1-Main"
+    },
+    {
+      "parameters": {
+        "url": "http://13.61.244.156:3000/health",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -320,
+        224
+      ],
+      "id": "e651713c-62ec-42bd-8ea0-bd8a2bb7fd4e",
+      "name": "Server3-DB"
+    },
+    {
+      "parameters": {
+        "url": "http://16.171.91.105:3000/health",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -272,
+        0
+      ],
+      "id": "4541c04b-d143-410d-9ec8-437dc0a2267b",
+      "name": "Server2 -web"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -32,
+        0
+      ],
+      "id": "921bc0e5-1a2d-4b7e-9419-8121dc4d912d",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst server1 = items[0].json;\nconst server2 = items[1].json;\nconst server3 = items[2].json;\n\nconst content = `You are an infrastructure monitoring assistant. Analyze the health data from three servers and write a professional consolidated infrastructure report in 4-5 paragraphs. Compare the servers, highlight any concerning values (memory above 80%, disk above 85%, CPU above 80%), and recommend any actions needed.\\n\\nServer 1 (Main Server) - ${server1.hostname}:\\n- CPU: ${server1.cpu_usage_percent}\\n- Memory: ${server1.memory.used_mb}MB / ${server1.memory.total_mb}MB (${server1.memory.usage_percent}% used)\\n- Disk: ${server1.disk}\\n- Uptime: ${server1.uptime}\\n\\nServer 2 (Web Server) - ${server2.hostname}:\\n- CPU: ${server2.cpu_usage_percent}\\n- Memory: ${server2.memory.used_mb}MB / ${server2.memory.total_mb}MB (${server2.memory.usage_percent}% used)\\n- Disk: ${server2.disk}\\n- Uptime: ${server2.uptime}\\n\\nServer 3 (DB Server) - ${server3.hostname}:\\n- CPU: ${server3.cpu_usage_percent}\\n- Memory: ${server3.memory.used_mb}MB / ${server3.memory.total_mb}MB (${server3.memory.usage_percent}% used)\\n- Disk: ${server3.disk}\\n- Uptime: ${server3.uptime}`;\n\nreturn [{\n  json: {\n    model: \"llama-3.3-70b-versatile\",\n    max_tokens: 1500,\n    temperature: 0.4,\n    messages: [{ role: \"user\", content: content }]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        16
+      ],
+      "id": "35e9c0da-ad61-4cd3-b680-81b928c338c8",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        320,
+        16
+      ],
+      "id": "72e25e55-1b25-41c9-87e2-3bc1491b3240",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "gGEd6s7Yt07UK5K5",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nconst raw = response.choices[0].message.content;\n\nconst summary = raw\n  .replace(/\\*\\*(.*?)\\*\\*/g, '$1')\n  .replace(/#{1,6}\\s/g, '')\n  .replace(/\\*(.*?)\\*/g, '$1')\n  .trim();\n\nconst allItems = $('Merge').all();\n\nconst isCritical = allItems.some(item => \n  item.json.memory?.usage_percent > 85 ||\n  item.json.disk?.includes('100%') ||\n  parseFloat(item.json.cpu_usage_percent) > 80\n);\n\nreturn [{\n  json: {\n    summary: summary,\n    is_critical: isCritical,\n    is_critical_type: typeof isCritical,\n    is_critical_string: String(isCritical),\n    timestamp: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Lagos' }),\n    servers_monitored: 3\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        16
+      ],
+      "id": "218c6557-c409-4905-90ad-9f754c73916d",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0e77aa35-9f95-45b3-b5d8-e5e7ccbb04be",
+              "leftValue": "={{ $json.is_critical }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        656,
+        16
+      ],
+      "id": "e648aec6-a09b-40e3-aa4c-7f62bbd5b01a",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "sendTo": "isaacambi2@gmail.com",
+        "subject": "=🔴 URGENT — Infrastructure Alert — {{ $json.timestamp }}",
+        "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 650px; margin: auto; border: 2px solid #cc0000; border-radius: 8px; overflow: hidden;\">   <div style=\"background-color: #cc0000; padding: 24px;\">     <h1 style=\"color: white; margin: 0; font-size: 22px;\">🔴 URGENT Infrastructure Alert</h1>     <p style=\"color: #ffcccc; margin: 6px 0 0;\">{{ $json.timestamp }} — {{ $json.servers_monitored }} servers monitored</p>   </div>   <div style=\"padding: 24px; background: #fff8f8;\">     <p style=\"color: #333; line-height: 1.8; white-space: pre-line;\">{{ $json.summary }}</p>   </div>   <div style=\"background: #f4f4f4; padding: 16px; text-align: center;\">     <p style=\"color: #999; font-size: 12px; margin: 0;\">Automated alert generated by your n8n infrastructure monitor</p>   </div> </div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        864,
+        -32
+      ],
+      "id": "c628168d-eace-4136-b949-a32214a451a0",
+      "name": "Send a message",
+      "webhookId": "d8e6b399-0ad1-4339-8a02-d691847b19a7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "J9VrTlPMUy52wu1T",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "isaacambi2@gmail.com",
+        "subject": "=Daily Infrastructure Report — All systems normal — {{ $json.timestamp }}",
+        "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 650px; margin: auto; border: 2px solid #1A6496; border-radius: 8px; overflow: hidden;\">   <div style=\"background-color: #1A6496; padding: 24px;\">     <h1 style=\"color: white; margin: 0; font-size: 22px;\">✅ Daily Infrastructure Report</h1>     <p style=\"color: #cce5f6; margin: 6px 0 0;\">{{ $json.timestamp }} — {{ $json.servers_monitored }} servers monitored</p>   </div>   <div style=\"padding: 24px; background: #ffffff;\">     <p style=\"color: #333; line-height: 1.8; white-space: pre-line;\">{{ $json.summary }}</p>   </div>   <div style=\"background: #f4f4f4; padding: 16px; text-align: center;\">     <p style=\"color: #999; font-size: 12px; margin: 0;\">Automated report generated by your n8n infrastructure monitor</p>   </div> </div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        96
+      ],
+      "id": "9bffc25a-09ac-4bef-a6a2-425f2ff38596",
+      "name": "Send a message1",
+      "webhookId": "a56626e9-0665-443a-bbfb-8c074d09df44",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "J9VrTlPMUy52wu1T",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "devops",
+          "mode": "name"
+        },
+        "text": "={{ $('Code in JavaScript1').first().json.summary }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1056,
+        16
+      ],
+      "id": "f607ac34-c56b-4f3e-9244-8759630e9759",
+      "name": "Send a message2",
+      "webhookId": "ed05f24d-64b0-422c-be1d-e76f2d16e82f",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "1iaoxrpE2gzSqVlU",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Server2 -web",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Server3-DB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Server1-Main",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Server3-DB": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Server2 -web": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Server1-Main": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0d17c79f-62ab-49c2-bc94-20b5641f1d6e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "253017ad22821f7caa291251627ac66725dc02f6426e033603974ed32ad579f5"
+  },
+  "id": "txc63Cx0aIk7g7vD",
+  "tags": []
+}
